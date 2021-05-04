@@ -97,7 +97,7 @@ class Agent:
             current_q = deepcopy(self.network)
             for _ in range(self.num_replay):
                 experiences = self.replay_buffer.sample()
-                self.optimize_network(experiences, self.discount, self.optimizer, self.network, current_q, self.tau)
+                self.optimize_network(experiences, current_q)
                 
         self.last_state = state
         self.last_action = action
@@ -120,7 +120,7 @@ class Agent:
             current_q = deepcopy(self.network)
             for _ in range(self.num_replay):
                 experiences = self.replay_buffer.sample()
-                self.optimize_network(experiences, self.discount, self.optimizer, self.network, current_q, self.tau)
+                self.optimize_network(experiences, current_q)
         
     def agent_message(self, message):
         if message == "get_sum_reward":
@@ -154,7 +154,7 @@ class Agent:
         return action_probs
 
 
-    def get_td_error(self, states, next_states, actions, rewards, discount, terminals, network, current_q, tau):
+    def get_td_error(self, states, next_states, actions, rewards, terminals, current_q):
         """
         Args:
         states (Numpy array): The batch of states with the shape (batch_size, state_dim).
@@ -172,14 +172,14 @@ class Agent:
 
         q_next_mat = np.apply_along_axis(current_q.get_action_values, 1, next_states).squeeze()
 
-        probs_mat = self.softmax(q_next_mat, tau)
+        probs_mat = self.softmax(q_next_mat, self.tau)
         
         v_next_vec = np.einsum("ij,ij->i", probs_mat, q_next_mat)
         v_next_vec *= (1 - terminals)
         
-        target_vec = rewards + discount * v_next_vec
+        target_vec = rewards + self.discount * v_next_vec
         
-        q_mat = np.apply_along_axis(network.get_action_values,1, states).squeeze()
+        q_mat = np.apply_along_axis(self.network.get_action_values,1, states).squeeze()
         
         batch_indices = np.arange(q_mat.shape[0])
 
@@ -189,7 +189,7 @@ class Agent:
 
         return delta_vec
 
-    def optimize_network(self, experiences, discount, optimizer, network, current_q, tau):
+    def optimize_network(self, experiences, current_q):
         """
         Args:
         experiences (Numpy array): The batch of experiences including the states, actions, 
@@ -207,16 +207,16 @@ class Agent:
         terminals = np.array(terminals)
         batch_size = states.shape[0]
 
-        delta_vec = self.get_td_error(states, next_states, actions, rewards, discount, terminals, network, current_q, tau)
+        delta_vec = self.get_td_error(states, next_states, actions, rewards, terminals, current_q)
         batch_indices = np.arange(batch_size)
 
-        delta_mat = np.zeros((batch_size, network.num_actions))
+        delta_mat = np.zeros((batch_size, self.network.num_actions))
         delta_mat[batch_indices, actions] = delta_vec
 
-        td_update = network.get_TD_update(states, delta_mat)
+        td_update = self.network.get_TD_update(states, delta_mat)
 
-        weights = optimizer.update_weights(network.get_weights(), td_update)
+        weights = self.optimizer.update_weights(self.network.get_weights(), td_update)
 
-        network.set_weights(weights)
+        self.network.set_weights(weights)
 
 
